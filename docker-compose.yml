@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"   # la ESP32 le habla a este puerto
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"     # la página se abre en http://<IP-del-computador>:8080
+    depends_on:
+      - backend
+    restart: unless-stopped

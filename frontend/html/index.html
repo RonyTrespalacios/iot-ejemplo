@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IoT ejemplo: pulsador y LED</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Pulsador y LED</h1>
+    <p id="conexion" class="conexion">Esperando datos de la ESP32…</p>
+  </header>
+
+  <main>
+    <!-- Sensor: lo que la ESP32 reporta -->
+    <section class="tarjeta">
+      <h2>Pulsador</h2>
+      <p id="pulsador" class="estado">—</p>
+      <p id="ultima-lectura" class="detalle">Sin lecturas todavía</p>
+    </section>
+
+    <!-- Actuador: lo que la página ordena -->
+    <section class="tarjeta">
+      <h2>LED</h2>
+      <p id="led" class="estado">—</p>
+      <button id="boton-led" type="button">Encender</button>
+    </section>
+
+    <!-- Historial de lecturas -->
+    <section class="tarjeta historial">
+      <h2>Últimas lecturas</h2>
+      <table>
+        <thead>
+          <tr><th>Hora</th><th>Sensor</th><th>Valor</th></tr>
+        </thead>
+        <tbody id="tabla-lecturas"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

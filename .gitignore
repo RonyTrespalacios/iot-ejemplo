@@ -1,0 +1,12 @@
+# Claves del WiFi y dirección del servidor de cada grupo
+firmware/**/config.h
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
