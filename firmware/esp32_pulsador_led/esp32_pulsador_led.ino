@@ -3,9 +3,15 @@
 // =============================================================================
 //  La ESP32 es siempre la que inicia la comunicación con el backend:
 //    - Cada INTERVALO_LECTURA_MS envía el estado del pulsador:
-//        POST /api/lecturas   {"sensor": "pulsador", "valor": 1}
+//        POST /api/lecturas            {"sensor": "pulsador", "valor": 1}
 //    - Cada INTERVALO_ACTUADOR_MS pregunta cómo debe estar el LED:
-//        GET  /api/actuador   ->  {"encendido": true}
+//        GET  /api/actuador            ->  {"encendido": true}
+//    - Cada vez que se presiona el pulsador, le pide al backend invertir el LED:
+//        POST /api/actuador/alternar   ->  {"encendido": false}
+//
+//  El backend es la única fuente de verdad del LED. El pulsador no enciende
+//  el LED directamente: le avisa al backend, y el LED cambia con la respuesta.
+//  Así la página web y el LED siempre coinciden, cambie quien cambie el estado.
 //
 //  Conexiones:
 //    - Pulsador entre GPIO 4 y GND (se usa la resistencia pull-up interna,
@@ -32,11 +38,19 @@ const int PIN_PULSADOR = 4;
 const int PIN_LED = 2;
 
 const unsigned long INTERVALO_LECTURA_MS = 1000;
-const unsigned long INTERVALO_ACTUADOR_MS = 1000;
+const unsigned long INTERVALO_ACTUADOR_MS = 300;
+// Tiempo que la entrada debe quedarse quieta para aceptar un cambio. Los
+// contactos de un pulsador rebotan unos milisegundos al presionarlo.
+const unsigned long ANTIRREBOTE_MS = 50;
 const int TIMEOUT_HTTP_MS = 3000;
 
 unsigned long ultimaLectura = 0;
 unsigned long ultimaConsultaActuador = 0;
+
+// Estado del antirrebote
+int lecturaAnterior = HIGH;            // última lectura cruda del pin
+int estadoPulsador = HIGH;             // estado ya filtrado (HIGH = suelto)
+unsigned long ultimoCambioPulsador = 0;
 
 // -----------------------------------------------------------------------------
 //  WiFi
@@ -59,11 +73,29 @@ void conectarWiFi() {
 }
 
 // -----------------------------------------------------------------------------
+//  Actuador: aplicar la respuesta del backend
+// -----------------------------------------------------------------------------
+
+// Lee un JSON como {"encendido": true} y deja el LED en ese estado.
+void aplicarEstadoLed(const String &respuesta) {
+  JsonDocument documento;
+  DeserializationError error = deserializeJson(documento, respuesta);
+  if (error) {
+    Serial.print("Respuesta JSON inválida: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  bool encendido = documento["encendido"];
+  digitalWrite(PIN_LED, encendido ? HIGH : LOW);
+}
+
+// -----------------------------------------------------------------------------
 //  Sensor: enviar una lectura al backend
 // -----------------------------------------------------------------------------
 
 void enviarLectura() {
-  int presionado = (digitalRead(PIN_PULSADOR) == LOW) ? 1 : 0;
+  int presionado = (estadoPulsador == LOW) ? 1 : 0;
 
   // Armar el JSON: {"sensor": "pulsador", "valor": 0 o 1}
   JsonDocument documento;
@@ -98,22 +130,56 @@ void consultarActuador() {
   int codigo = http.GET();
 
   if (codigo == 200) {
-    // La respuesta es {"encendido": true} o {"encendido": false}
-    JsonDocument documento;
-    DeserializationError error = deserializeJson(documento, http.getString());
-    if (!error) {
-      bool encendido = documento["encendido"];
-      digitalWrite(PIN_LED, encendido ? HIGH : LOW);
-    } else {
-      Serial.print("Respuesta JSON inválida: ");
-      Serial.println(error.c_str());
-    }
+    aplicarEstadoLed(http.getString());
   } else {
     Serial.print("Error al consultar el actuador: ");
     Serial.println(codigo);
   }
 
   http.end();
+}
+
+// -----------------------------------------------------------------------------
+//  Pulsador: pedirle al backend que invierta el LED
+// -----------------------------------------------------------------------------
+
+void alternarActuador() {
+  HTTPClient http;
+  http.begin(String(SERVIDOR_URL) + "/api/actuador/alternar");
+  http.setTimeout(TIMEOUT_HTTP_MS);
+  int codigo = http.POST("");
+
+  if (codigo == 200) {
+    // El backend responde con el estado nuevo: se aplica de una vez, sin
+    // esperar a la próxima consulta.
+    aplicarEstadoLed(http.getString());
+  } else {
+    Serial.print("Error al alternar el actuador: ");
+    Serial.println(codigo);
+  }
+
+  http.end();
+}
+
+// Revisa el pulsador con antirrebote. Devuelve true solo en el instante en
+// que se presiona (flanco de suelto a presionado), no mientras se mantiene.
+bool pulsadorRecienPresionado() {
+  int lectura = digitalRead(PIN_PULSADOR);
+  unsigned long ahora = millis();
+
+  if (lectura != lecturaAnterior) {
+    // La entrada se movió: se reinicia la cuenta del antirrebote.
+    ultimoCambioPulsador = ahora;
+    lecturaAnterior = lectura;
+  }
+
+  if (ahora - ultimoCambioPulsador >= ANTIRREBOTE_MS && lectura != estadoPulsador) {
+    // La entrada lleva ANTIRREBOTE_MS quieta en un valor nuevo: cambio real.
+    estadoPulsador = lectura;
+    return estadoPulsador == LOW;
+  }
+
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -135,8 +201,12 @@ void loop() {
     conectarWiFi();
   }
 
-  // millis() en lugar de delay(): así las dos tareas corren cada una a su
-  // ritmo sin bloquearse entre sí.
+  if (pulsadorRecienPresionado()) {
+    alternarActuador();
+  }
+
+  // millis() en lugar de delay(): así cada tarea corre a su ritmo sin
+  // bloquear a las demás (incluida la lectura del pulsador).
   unsigned long ahora = millis();
 
   if (ahora - ultimaLectura >= INTERVALO_LECTURA_MS) {

@@ -1,12 +1,17 @@
 """Backend del ejemplo IoT: un pulsador (sensor) y un LED (actuador).
 
 La ESP32 es siempre la que inicia la comunicación:
-  - POST /api/lecturas  -> envía el estado del pulsador
-  - GET  /api/actuador  -> pregunta si el LED debe estar encendido
+  - POST /api/lecturas          -> envía el estado del pulsador
+  - GET  /api/actuador          -> pregunta si el LED debe estar encendido
+  - POST /api/actuador/alternar -> al presionar el pulsador, invierte el LED
 
 La página web usa las mismas rutas:
   - GET  /api/lecturas  -> muestra las últimas lecturas
   - PUT  /api/actuador  -> cambia el estado deseado del LED
+
+El backend es la única fuente de verdad del LED: tanto el pulsador como la
+página cambian el estado aquí, y la ESP32 lo aplica al consultarlo. Así la
+página siempre muestra lo mismo que el LED.
 
 Los datos se guardan en memoria: al reiniciar el contenedor se pierden.
 Guardarlos en una base de datos es una buena extensión del proyecto.
@@ -69,4 +74,12 @@ def leer_actuador() -> EstadoActuador:
 def cambiar_actuador(nuevo: EstadoActuador) -> EstadoActuador:
     global actuador
     actuador = nuevo
+    return actuador
+
+
+@app.post("/api/actuador/alternar")
+def alternar_actuador() -> EstadoActuador:
+    """Invierte el estado del LED. La usa la ESP32 al presionar el pulsador."""
+    global actuador
+    actuador = EstadoActuador(encendido=not actuador.encendido)
     return actuador

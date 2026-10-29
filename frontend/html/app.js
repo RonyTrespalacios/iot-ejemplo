@@ -1,7 +1,8 @@
-// La página consulta al backend cada segundo (polling), igual que la ESP32.
+// La página consulta al backend cada medio segundo (polling), igual que la
+// ESP32.
 // Las rutas son relativas (/api/...): nginx las reenvía al backend.
 
-const INTERVALO_MS = 1000;
+const INTERVALO_MS = 500;
 // Si la última lectura tiene más de estos segundos, la ESP32 se da por
 // desconectada.
 const SEGUNDOS_SIN_DATOS = 5;

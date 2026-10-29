@@ -1,8 +1,9 @@
 # IoT ejemplo: pulsador y LED con ESP32
 
 Proyecto de ejemplo del curso **Máquinas Digitales**. Una ESP32 lee un
-**pulsador** y controla un **LED**. Una página web muestra el estado del
-pulsador y enciende o apaga el LED. Todo corre en la red local.
+**pulsador** y controla un **LED**. El LED se enciende o apaga de dos formas:
+con el pulsador o con un botón en una página web, que además muestra el
+estado del pulsador. Todo corre en la red local.
 
 Este repositorio es el **punto de partida** del proyecto de curso: cada grupo
 lo copia a su propio repositorio, cambia el hardware y adapta el software a su
@@ -21,9 +22,20 @@ aplicación.
 ```
 
 - La **ESP32** siempre inicia la comunicación. Cada segundo envía el estado del
-  pulsador y pregunta cómo debe estar el LED.
+  pulsador y, cada 300 ms, pregunta cómo debe estar el LED.
 - El **backend** guarda las lecturas y el estado deseado del LED. Es el único
   punto de encuentro: la ESP32 y la página nunca se hablan directamente.
+- El backend es la **única fuente de verdad** del LED. El pulsador no enciende
+  el LED por su cuenta: al presionarlo, la ESP32 le pide al backend que lo
+  invierta y aplica la respuesta. La página hace lo mismo con su botón. Así el
+  LED y la página siempre coinciden, cambie quien cambie el estado.
+
+### El recorrido de una orden
+
+| Quién da la orden | Qué pasa |
+|---|---|
+| **Pulsador** | La ESP32 detecta la pulsación (con antirrebote) → `POST /api/actuador/alternar` → el backend invierte el estado y responde → la ESP32 cambia el LED de inmediato. La página se entera en su siguiente consulta |
+| **Página** | Botón → `PUT /api/actuador` → el backend guarda el estado → la ESP32 lo recibe en su siguiente consulta (máximo 300 ms) y cambia el LED |
 - El **frontend** sirve la página. Las peticiones a `/api/` las reenvía al
   backend, así que la página y la API salen de la misma dirección.
 
@@ -105,8 +117,9 @@ de red: si la ESP32 deja de conectarse, revísela primero.
 ## 3. Probar
 
 Abra `http://<IP-del-computador>:8080` desde el **teléfono** conectado a la
-misma red. Si ve el pulsador cambiar y el LED responde al botón, el sistema
-está desplegado.
+misma red. Si el LED responde tanto al pulsador como al botón de la página, y
+la página muestra el estado correcto en ambos casos, el sistema está
+desplegado.
 
 ## La API
 
@@ -114,6 +127,7 @@ está desplegado.
 |---|---|---|
 | ESP32 | `POST /api/lecturas` | `{"sensor": "pulsador", "valor": 1}` |
 | ESP32 | `GET /api/actuador` | `{"encendido": true}` |
+| ESP32 | `POST /api/actuador/alternar` | sin cuerpo; responde el estado nuevo, `{"encendido": false}` |
 | Página | `GET /api/lecturas?limite=10` | lista de lecturas, la más reciente primero |
 | Página | `PUT /api/actuador` | `{"encendido": false}` |
 
@@ -122,6 +136,7 @@ Se puede probar sin la ESP32, desde una terminal:
 ```bash
 curl -X POST http://localhost:8000/api/lecturas -H "Content-Type: application/json" -d '{"sensor": "pulsador", "valor": 1}'
 curl http://localhost:8000/api/actuador
+curl -X POST http://localhost:8000/api/actuador/alternar
 ```
 
 Las lecturas se guardan **en memoria**: se pierden al reiniciar el contenedor.
@@ -152,4 +167,12 @@ Las lecturas se guardan **en memoria**: se pierden al reiniciar el contenedor.
 
 Ideas para ir más allá: guardar las lecturas en una base de datos, graficar
 el histórico, un modo automático por umbral, o usar WebSocket o MQTT en lugar
-de consultar cada segundo.
+de consultar periódicamente.
+
+### ¿Por qué HTTP y no MQTT?
+
+Consultar el estado cada 300 ms basta para que el LED responda sin demora
+perceptible, y HTTP es más fácil de entender y de depurar: cada petición se
+puede repetir con `curl` o ver en `/docs`. MQTT o WebSocket valen la pena
+cuando la orden debe llegar al instante, cuando hay muchos dispositivos o
+cuando la ESP32 funciona con batería y no puede consultar tan seguido.
